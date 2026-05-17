@@ -1,0 +1,84 @@
+
+openapi: 3.0.3
+info:
+  title: SplitCart Product API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081
+paths:
+  /api/products:
+    get:
+      tags: [Products]
+      operationId: listProducts
+      summary: Listado de productos con filtros y paginación
+      parameters:
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: maxPrice
+          schema: { type: number }
+        - in: query
+          name: page
+          schema: { type: integer, default: 0 }
+        - in: query
+          name: size
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: Lista de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Product' }
+  /api/products/{id}:
+    get:
+      tags: [Products]
+      operationId: getProductById
+      summary: Obtener producto por ID/SKU
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Producto encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { description: Producto no encontrado }
+  /api/products/availability:
+    get:
+      tags: [Products]
+      operationId: getAvailability
+      summary: Disponibilidad de múltiples SKUs
+      parameters:
+        - in: query
+          name: ids
+          required: true
+          description: Lista de SKUs separados por coma
+          schema: { type: string }
+      responses:
+        '200':
+          description: Disponibilidad por SKU
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Availability' }
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        category: { type: string }
+        price: { type: number }
+    Availability:
+      type: object
+      properties:
+        sku: { type: string }
+        available: { type: integer }

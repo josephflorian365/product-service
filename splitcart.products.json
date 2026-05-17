@@ -1,0 +1,18 @@
+[{
+  "_id": "P01",
+  "name": "Teclado Mecánico",
+  "category": "perifericos",
+  "price": 199
+},
+{
+  "_id": "P02",
+  "name": "Mouse Gamer",
+  "category": "perifericos",
+  "price": 99
+},
+{
+  "_id": "P03",
+  "name": "Monitor 27",
+  "category": "video",
+  "price": 899
+}]

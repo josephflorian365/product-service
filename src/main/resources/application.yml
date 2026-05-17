@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: product-service
+  cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
+  data:
+    mongodb:
+      uri: ${MONGODB_PRODUCT_URI:mongodb://mongodb:27017/productdb}
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9093}
+
+kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9093}
+  schema-registry-url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8083}
+
+server:
+  port: 8082
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://eureka-server:8761/eureka/}
+
+logging:
+  level:
+    root: INFO
+    com.nttdata: INFO
+    org.springframework.cloud: WARN
+
+topics:
+  client-validation-request: client.validation.request
+  client-validation-reply: client.validation.reply
+  product-events: product.events

@@ -1,0 +1,38 @@
+{
+  "name": "ProductEvent",
+  "namespace": "com.nttdata.apps.avro",
+  "doc": "Event for product operations",
+  "type": "record",
+  "fields": [
+    {
+      "name": "productId",
+      "type": ["null", "string"],
+      "default": null
+    },
+    {
+      "name": "productType",
+      "type": ["null", "string"],
+      "default": null
+    },
+    {
+      "name": "clientId",
+      "type": ["null", "string"],
+      "default": null
+    },
+    {
+      "name": "amount",
+      "type": ["null", "double"],
+      "default": null
+    },
+    {
+      "name": "eventType",
+      "type": ["null", "string"],
+      "default": null
+    },
+    {
+      "name": "timestamp",
+      "type": ["null", "long"],
+      "default": null
+    }
+  ]
+}
