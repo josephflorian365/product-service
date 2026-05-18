@@ -213,7 +213,12 @@ public class AccountService {
             .concatWith(accountRepository.findByHoldersContaining(clientId))
             .collect(Collectors.toMap(Account::getId, account -> account, (left, right) -> left))
             .flatMapMany(map -> reactor.core.publisher.Flux.fromIterable(map.values()))
-            .sort(Comparator.comparing(Account::getCreatedDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+            .sort(
+                Comparator.comparing(
+                    Account::getCreatedDate,
+                    Comparator.nullsLast(Comparator.naturalOrder())
+                ).reversed()
+            );
     }
 
     private boolean isClientOwner(Account account, String clientId) {

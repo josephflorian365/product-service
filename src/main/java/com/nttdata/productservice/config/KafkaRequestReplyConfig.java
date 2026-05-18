@@ -1,7 +1,6 @@
 package com.nttdata.productservice.config;
 
 import com.nttdata.productservice.messaging.ClientValidationRequest;
-import com.nttdata.productservice.messaging.ClientValidationResponse;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -15,7 +14,6 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.requestreply.ReplyingKafkaTemplate;
-import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 
@@ -40,37 +38,36 @@ public class KafkaRequestReplyConfig {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        props.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
         return new DefaultKafkaProducerFactory<>(props);
     }
 
     @Bean
-    ConsumerFactory<String, ClientValidationResponse> clientValidationConsumerFactory() {
-        JsonDeserializer<ClientValidationResponse> deserializer =
-            new JsonDeserializer<>(ClientValidationResponse.class);
-        deserializer.addTrustedPackages("*");
-
+    ConsumerFactory<String, String> clientValidationConsumerFactory() {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "product-service-replies");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
-        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deserializer);
+        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), new StringDeserializer());
     }
 
     @Bean
-    ConcurrentMessageListenerContainer<String, ClientValidationResponse> repliesContainer() {
+    ConcurrentMessageListenerContainer<String, String> repliesContainer() {
         org.springframework.kafka.listener.ContainerProperties containerProperties =
             new org.springframework.kafka.listener.ContainerProperties(replyTopic);
-        ConcurrentMessageListenerContainer<String, ClientValidationResponse> container =
+        ConcurrentMessageListenerContainer<String, String> container =
             new ConcurrentMessageListenerContainer<>(clientValidationConsumerFactory(), containerProperties);
         container.getContainerProperties().setGroupId("product-service-replies");
         return container;
     }
 
     @Bean
-    ReplyingKafkaTemplate<String, ClientValidationRequest, ClientValidationResponse> replyingKafkaTemplate() {
-        return new ReplyingKafkaTemplate<>(clientValidationProducerFactory(), repliesContainer());
+    ReplyingKafkaTemplate<String, ClientValidationRequest, String> replyingKafkaTemplate() {
+        ReplyingKafkaTemplate<String, ClientValidationRequest, String> template =
+            new ReplyingKafkaTemplate<>(clientValidationProducerFactory(), repliesContainer());
+        template.setSharedReplyTopic(true);
+        return template;
     }
 
     @Bean

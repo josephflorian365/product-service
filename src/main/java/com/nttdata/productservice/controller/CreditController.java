@@ -50,8 +50,11 @@ public class CreditController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Update a credit")
-    public Mono<ResponseEntity<Credit>> updateCredit(@PathVariable String id, @RequestBody Credit credit) {
-        return Mono.fromCompletionStage(creditService.updateCredit(id, credit).toCompletionStage()).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<Credit>> updateCredit(
+            @PathVariable String id,
+            @RequestBody Credit credit) {
+        return Mono.fromCompletionStage(creditService.updateCredit(id, credit).toCompletionStage())
+            .map(ResponseEntity::ok);
     }
 
     @DeleteMapping("/{id}")

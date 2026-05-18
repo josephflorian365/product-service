@@ -50,8 +50,11 @@ public class AccountController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Update an account")
-    public Mono<ResponseEntity<Account>> updateAccount(@PathVariable String id, @RequestBody Account account) {
-        return Mono.fromCompletionStage(accountService.updateAccount(id, account).toCompletionStage()).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<Account>> updateAccount(
+            @PathVariable String id,
+            @RequestBody Account account) {
+        return Mono.fromCompletionStage(accountService.updateAccount(id, account).toCompletionStage())
+            .map(ResponseEntity::ok);
     }
 
     @DeleteMapping("/{id}")

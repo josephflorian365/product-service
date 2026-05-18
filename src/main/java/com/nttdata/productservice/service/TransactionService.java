@@ -182,7 +182,10 @@ public class TransactionService {
                 .flatMap(credit -> validateTransactionAgainstCredit(transaction, credit).thenReturn(transaction));
         }
 
-        return Mono.error(new BusinessException("Invalid product type: " + transaction.getProductType(), "INVALID_PRODUCT_TYPE"));
+        return Mono.error(new BusinessException(
+            "Invalid product type: " + transaction.getProductType(),
+            "INVALID_PRODUCT_TYPE"
+        ));
     }
 
     private Mono<TransferRequest> validateTransferRequest(TransferRequest request) {
@@ -420,7 +423,10 @@ public class TransactionService {
         if ("CREDIT".equalsIgnoreCase(transaction.getProductType())) {
             return updateCreditBalance(transaction.getProductId(), transaction);
         }
-        return Mono.error(new BusinessException("Invalid product type: " + transaction.getProductType(), "INVALID_PRODUCT_TYPE"));
+        return Mono.error(new BusinessException(
+            "Invalid product type: " + transaction.getProductType(),
+            "INVALID_PRODUCT_TYPE"
+        ));
     }
 
     private Mono<Void> verifyClientOwnsProduct(String clientId, String productType, String productId) {

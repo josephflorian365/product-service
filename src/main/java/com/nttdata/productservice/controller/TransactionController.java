@@ -49,7 +49,8 @@ public class TransactionController {
     @Operation(summary = "Pay a third-party credit product from a bank account")
     public Mono<ResponseEntity<ThirdPartyCreditPaymentResponse>> createThirdPartyCreditPayment(
             @RequestBody ThirdPartyCreditPaymentRequest paymentRequest) {
-        return Mono.fromCompletionStage(transactionService.createThirdPartyCreditPayment(paymentRequest).toCompletionStage())
+        return Mono.fromCompletionStage(
+                transactionService.createThirdPartyCreditPayment(paymentRequest).toCompletionStage())
             .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response));
     }
 
@@ -77,8 +78,12 @@ public class TransactionController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Update a transaction")
-    public Mono<ResponseEntity<Transaction>> updateTransaction(@PathVariable String id, @RequestBody Transaction transaction) {
-        return Mono.fromCompletionStage(transactionService.updateTransaction(id, transaction).toCompletionStage()).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<Transaction>> updateTransaction(
+            @PathVariable String id,
+            @RequestBody Transaction transaction) {
+        return Mono.fromCompletionStage(
+                transactionService.updateTransaction(id, transaction).toCompletionStage())
+            .map(ResponseEntity::ok);
     }
 
     @DeleteMapping("/{id}")
@@ -100,6 +105,8 @@ public class TransactionController {
             @PathVariable String clientId,
             @PathVariable String productType,
             @PathVariable String productId) {
-        return Flux.from(transactionService.getTransactionsByClientAndProductId(clientId, productType, productId));
+        return Flux.from(
+            transactionService.getTransactionsByClientAndProductId(clientId, productType, productId)
+        );
     }
 }
