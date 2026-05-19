@@ -19,6 +19,10 @@ public class ClientValidationResponse {
 
     private String profile;
 
+    private String documentType;
+
+    private String documentNumber;
+
     private String errorCode;
 
     private String errorMessage;

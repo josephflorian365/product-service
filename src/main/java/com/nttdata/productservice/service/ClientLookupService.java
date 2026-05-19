@@ -102,7 +102,13 @@ public class ClientLookupService {
                 );
             }
 
-            return new ClientSummary(response.getClientId(), response.getClientType(), response.getProfile());
+            return new ClientSummary(
+                response.getClientId(),
+                response.getClientType(),
+                response.getProfile(),
+                response.getDocumentType(),
+                response.getDocumentNumber()
+            );
         })
             .subscribeOn(Schedulers.boundedElastic())
             .onErrorMap(ExecutionException.class, error -> new BusinessException(

@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Document(collection = "yanki_wallets")
@@ -28,6 +29,8 @@ public class YankiWallet {
     private String email;
 
     private String linkedDebitCardId;
+
+    private BigDecimal balance;
 
     private LocalDateTime createdDate;
 }

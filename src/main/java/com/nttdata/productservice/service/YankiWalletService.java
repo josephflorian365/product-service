@@ -2,11 +2,13 @@ package com.nttdata.productservice.service;
 
 import com.nttdata.productservice.exception.BusinessException;
 import com.nttdata.productservice.model.DebitCard;
+import com.nttdata.productservice.model.ClientSummary;
 import com.nttdata.productservice.model.Transaction;
 import com.nttdata.productservice.model.YankiDebitCardLinkRequest;
 import com.nttdata.productservice.model.YankiPaymentRequest;
 import com.nttdata.productservice.model.YankiPaymentResponse;
 import com.nttdata.productservice.model.YankiWallet;
+import com.nttdata.productservice.model.YankiWalletTopUpRequest;
 import com.nttdata.productservice.messaging.DomainEventPublisher;
 import com.nttdata.productservice.repository.DebitCardRepositoryReactive;
 import com.nttdata.productservice.repository.YankiWalletRepositoryReactive;
@@ -34,6 +36,7 @@ public class YankiWalletService {
     private final DebitCardRepositoryReactive debitCardRepository;
     private final TransactionService transactionService;
     private final DomainEventPublisher domainEventPublisher;
+    private final ClientLookupService clientLookupService;
 
     public Single<YankiWallet> createWallet(YankiWallet wallet) {
         return Mono.just(wallet)
@@ -41,6 +44,7 @@ public class YankiWalletService {
             .flatMap(this::validateUniqueness)
             .map(valid -> {
                 valid.setCreatedDate(LocalDateTime.now());
+                valid.setBalance(ZERO);
                 return valid;
             })
             .flatMap(yankiWalletRepository::save)
@@ -94,16 +98,26 @@ public class YankiWalletService {
             .switchIfEmpty(Mono.error(new BusinessException("Yanki wallet not found", "YANKI_WALLET_NOT_FOUND")))
             .flatMap(wallet -> debitCardRepository.findById(request.getDebitCardId())
                 .switchIfEmpty(Mono.error(new BusinessException("Debit card not found", "DEBIT_CARD_NOT_FOUND")))
-                .flatMap(debitCard -> {
-                    wallet.setLinkedDebitCardId(debitCard.getId());
-                    return yankiWalletRepository.save(wallet);
-                }))
+                .flatMap(debitCard -> validateWalletOwnership(wallet, debitCard)
+                    .then(Mono.defer(() -> {
+                        wallet.setLinkedDebitCardId(debitCard.getId());
+                        return yankiWalletRepository.save(wallet);
+                    }))))
             .doOnSuccess(saved -> domainEventPublisher.publish(
                 "YANKI_WALLET_LINKED_TO_DEBIT_CARD",
                 "YANKI_WALLET",
                 saved.getId(),
                 java.util.Map.of("linkedDebitCardId", saved.getLinkedDebitCardId())))
             .as(Single::fromPublisher);
+    }
+
+    private Mono<Void> validateWalletOwnership(YankiWallet wallet, DebitCard debitCard) {
+        return clientLookupService.getClientById(debitCard.getClientId())
+            .flatMap(client -> documentsMatch(wallet, client)
+                ? Mono.empty()
+                : Mono.error(new BusinessException(
+                    "Debit card owner does not match wallet holder document",
+                    "DEBIT_CARD_NOT_OWNED_BY_WALLET_HOLDER")));
     }
 
     public Single<YankiPaymentResponse> sendPayment(YankiPaymentRequest request) {
@@ -123,6 +137,25 @@ public class YankiWalletService {
                     "sourcePhoneNumber", request.getSourcePhoneNumber(),
                     "destinationPhoneNumber", request.getDestinationPhoneNumber(),
                     "amount", request.getAmount()
+                )))
+            .as(Single::fromPublisher);
+    }
+
+    public Single<YankiWallet> topUpWallet(String walletId, YankiWalletTopUpRequest request) {
+        return validateTopUpRequest(request)
+            .flatMap(valid -> yankiWalletRepository.findById(walletId)
+                .switchIfEmpty(Mono.error(new BusinessException("Yanki wallet not found", "YANKI_WALLET_NOT_FOUND")))
+                .flatMap(wallet -> {
+                    wallet.setBalance(walletBalance(wallet).add(valid.getAmount()));
+                    return yankiWalletRepository.save(wallet);
+                }))
+            .doOnSuccess(saved -> domainEventPublisher.publish(
+                "YANKI_WALLET_TOP_UP",
+                "YANKI_WALLET",
+                saved.getId(),
+                java.util.Map.of(
+                    "amount", request.getAmount(),
+                    "description", request.getDescription() == null ? "" : request.getDescription().trim()
                 )))
             .as(Single::fromPublisher);
     }
@@ -195,68 +228,110 @@ public class YankiWalletService {
         return Mono.just(request);
     }
 
+    private Mono<YankiWalletTopUpRequest> validateTopUpRequest(YankiWalletTopUpRequest request) {
+        if (request == null) {
+            return Mono.error(new BusinessException("Top-up request is required", "INVALID_TOP_UP_REQUEST"));
+        }
+        if (request.getAmount() == null || request.getAmount().compareTo(ZERO) <= 0) {
+            return Mono.error(new BusinessException("Top-up amount must be greater than zero", "INVALID_AMOUNT"));
+        }
+        return Mono.just(request);
+    }
+
     private Mono<YankiPaymentResponse> executeWalletPayment(
             YankiPaymentRequest request,
             YankiWallet source,
             YankiWallet destination) {
-        if (source.getLinkedDebitCardId() == null || source.getLinkedDebitCardId().trim().isEmpty()) {
-            return Mono.error(new BusinessException(
-                "Source wallet must be linked to a debit card",
-                "YANKI_WALLET_NOT_LINKED"));
-        }
-        if (destination.getLinkedDebitCardId() == null || destination.getLinkedDebitCardId().trim().isEmpty()) {
-            return Mono.error(new BusinessException(
-                "Destination wallet must be linked to a debit card",
-                "YANKI_WALLET_NOT_LINKED"));
-        }
-
         String reference = "YNK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        return debitCardRepository.findById(source.getLinkedDebitCardId())
-            .switchIfEmpty(Mono.error(new BusinessException("Source debit card not found", "DEBIT_CARD_NOT_FOUND")))
-            .flatMap(sourceCard -> debitCardRepository.findById(destination.getLinkedDebitCardId())
+        return resolveSourcePayment(request, source, reference)
+            .flatMap(sourceTransaction -> resolveDestinationPayment(request, destination, reference)
+                .map(destinationTransaction -> new YankiPaymentResponse(
+                    reference,
+                    sourceTransaction,
+                    destinationTransaction
+                )));
+    }
+
+    private Mono<Transaction> resolveSourcePayment(
+            YankiPaymentRequest request,
+            YankiWallet source,
+            String reference) {
+        if (hasLinkedDebitCard(source)) {
+            return debitCardRepository.findById(source.getLinkedDebitCardId())
+                .switchIfEmpty(Mono.error(new BusinessException("Source debit card not found", "DEBIT_CARD_NOT_FOUND")))
+                .flatMap(sourceCard -> createAccountTransaction(
+                    sourceCard.getPrimaryAccountId(),
+                    "WITHDRAWAL",
+                    request.getAmount(),
+                    buildDescription(
+                        "Yanki payment to " + request.getDestinationPhoneNumber(),
+                        request.getDescription()),
+                    reference
+                ));
+        }
+
+        BigDecimal sourceBalance = walletBalance(source);
+        if (sourceBalance.compareTo(request.getAmount()) < 0) {
+            return Mono.error(new BusinessException(
+                "Insufficient wallet balance",
+                "INSUFFICIENT_WALLET_BALANCE"));
+        }
+
+        source.setBalance(sourceBalance.subtract(request.getAmount()));
+        return yankiWalletRepository.save(source)
+            .map(saved -> createWalletMovement(
+                saved.getId(),
+                "WITHDRAWAL",
+                request.getAmount(),
+                buildDescription("Yanki payment to " + request.getDestinationPhoneNumber(), request.getDescription()),
+                reference
+            ));
+    }
+
+    private Mono<Transaction> resolveDestinationPayment(
+            YankiPaymentRequest request,
+            YankiWallet destination,
+            String reference) {
+        if (hasLinkedDebitCard(destination)) {
+            return debitCardRepository.findById(destination.getLinkedDebitCardId())
                 .switchIfEmpty(Mono.error(new BusinessException(
                     "Destination debit card not found",
                     "DEBIT_CARD_NOT_FOUND")))
-                .flatMap(destinationCard -> createTransactions(
-                    request,
-                    source,
-                    destination,
-                    sourceCard,
-                    destinationCard,
-                    reference)));
+                .flatMap(destinationCard -> createAccountTransaction(
+                    destinationCard.getPrimaryAccountId(),
+                    "DEPOSIT",
+                    request.getAmount(),
+                    buildDescription("Yanki payment from " + request.getSourcePhoneNumber(), request.getDescription()),
+                    reference
+                ));
+        }
+
+        destination.setBalance(walletBalance(destination).add(request.getAmount()));
+        return yankiWalletRepository.save(destination)
+            .map(saved -> createWalletMovement(
+                saved.getId(),
+                "DEPOSIT",
+                request.getAmount(),
+                buildDescription("Yanki payment from " + request.getSourcePhoneNumber(), request.getDescription()),
+                reference
+            ));
     }
 
-    private Mono<YankiPaymentResponse> createTransactions(
-            YankiPaymentRequest request,
-            YankiWallet source,
-            YankiWallet destination,
-            DebitCard sourceCard,
-            DebitCard destinationCard,
+    private Mono<Transaction> createAccountTransaction(
+            String accountId,
+            String transactionType,
+            BigDecimal amount,
+            String description,
             String reference) {
         Transaction debitTransaction = new Transaction();
-        debitTransaction.setProductId(sourceCard.getPrimaryAccountId());
+        debitTransaction.setProductId(accountId);
         debitTransaction.setProductType("ACCOUNT");
-        debitTransaction.setTransactionType("WITHDRAWAL");
-        debitTransaction.setAmount(request.getAmount());
-        debitTransaction.setDescription(buildDescription(
-            "Yanki payment to " + destination.getPhoneNumber(),
-            request.getDescription()));
+        debitTransaction.setTransactionType(transactionType);
+        debitTransaction.setAmount(amount);
+        debitTransaction.setDescription(description);
         debitTransaction.setReference(reference);
-
-        Transaction creditTransaction = new Transaction();
-        creditTransaction.setProductId(destinationCard.getPrimaryAccountId());
-        creditTransaction.setProductType("ACCOUNT");
-        creditTransaction.setTransactionType("DEPOSIT");
-        creditTransaction.setAmount(request.getAmount());
-        creditTransaction.setDescription(buildDescription(
-            "Yanki payment from " + source.getPhoneNumber(),
-            request.getDescription()));
-        creditTransaction.setReference(reference);
-
-        return transactionService.persistOwnedTransaction(debitTransaction)
-            .flatMap(savedDebit -> transactionService.persistOwnedTransaction(creditTransaction)
-                .map(savedCredit -> new YankiPaymentResponse(reference, savedDebit, savedCredit)));
+        return transactionService.persistOwnedTransaction(debitTransaction);
     }
 
     private String buildDescription(String baseDescription, String customDescription) {
@@ -264,6 +339,41 @@ public class YankiWalletService {
             return baseDescription;
         }
         return baseDescription + " - " + customDescription.trim();
+    }
+
+    private boolean documentsMatch(YankiWallet wallet, ClientSummary client) {
+        return normalize(wallet.getDocumentType()).equals(normalize(client.getDocumentType()))
+            && normalize(wallet.getDocumentNumber()).equals(normalize(client.getDocumentNumber()));
+    }
+
+    private boolean hasLinkedDebitCard(YankiWallet wallet) {
+        return wallet.getLinkedDebitCardId() != null && !wallet.getLinkedDebitCardId().trim().isEmpty();
+    }
+
+    private BigDecimal walletBalance(YankiWallet wallet) {
+        return wallet.getBalance() == null ? ZERO : wallet.getBalance();
+    }
+
+    private Transaction createWalletMovement(
+            String walletId,
+            String transactionType,
+            BigDecimal amount,
+            String description,
+            String reference) {
+        Transaction transaction = new Transaction();
+        transaction.setProductId(walletId);
+        transaction.setProductType("YANKI_WALLET");
+        transaction.setTransactionType(transactionType);
+        transaction.setAmount(amount);
+        transaction.setAppliedFee(ZERO);
+        transaction.setDate(LocalDateTime.now());
+        transaction.setDescription(description);
+        transaction.setReference(reference);
+        return transaction;
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toUpperCase();
     }
 
     private YankiWallet mergeWallet(YankiWallet existing, YankiWallet incoming) {

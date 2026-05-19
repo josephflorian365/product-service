@@ -17,4 +17,8 @@ public class ClientSummary {
     private String clientType;
 
     private String profile;
+
+    private String documentType;
+
+    private String documentNumber;
 }

@@ -4,6 +4,7 @@ import com.nttdata.productservice.model.YankiDebitCardLinkRequest;
 import com.nttdata.productservice.model.YankiPaymentRequest;
 import com.nttdata.productservice.model.YankiPaymentResponse;
 import com.nttdata.productservice.model.YankiWallet;
+import com.nttdata.productservice.model.YankiWalletTopUpRequest;
 import com.nttdata.productservice.service.YankiWalletService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -71,6 +72,15 @@ public class YankiWalletController {
     public Mono<ResponseEntity<YankiPaymentResponse>> sendPayment(@RequestBody YankiPaymentRequest request) {
         return Mono.fromCompletionStage(yankiWalletService.sendPayment(request).toCompletionStage())
             .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response));
+    }
+
+    @PostMapping("/{walletId}/top-ups")
+    @Operation(summary = "Top up a Yanki wallet balance")
+    public Mono<ResponseEntity<YankiWallet>> topUpWallet(
+            @PathVariable String walletId,
+            @RequestBody YankiWalletTopUpRequest request) {
+        return Mono.fromCompletionStage(yankiWalletService.topUpWallet(walletId, request).toCompletionStage())
+            .map(updated -> ResponseEntity.status(HttpStatus.CREATED).body(updated));
     }
 
     @DeleteMapping("/{id}")
